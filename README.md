@@ -53,13 +53,18 @@ In this repo the internal API (`services/mock_api.py`) and the Claude webhook
 | TTS | AssemblyAI streaming TTS | streaming, ~0.4 s to first audio on a warm connection | `TTS_PROVIDER=gemini`, `TTS_VOICE` |
 | Claude skill | `anthropic/claude-sonnet-5.5` | stands in for the client's own Claude setup | `CLAUDE_SKILL_MODEL` |
 
-Measured on this demo (local LiveKit server, residential network): the agent starts answering
-about 4–5 s after the user stops talking on turns that call a tool (about 2 s of that is
-end-of-turn detection), and the Claude skill takes 3–5 s, covered by the filler line.
+**Turn-taking.** People pause mid-sentence, so the agent does not answer at the first gap.
+LiveKit's end-of-turn model (`turn-detector-v1-mini`, runs locally, no download) listens to how
+the sentence ends: if it sounds finished the agent answers after 1.2 s of silence, if it sounds
+unfinished ("What's our refund policy for…") it waits up to 2.0 s. Both are env settings.
 
-On LiveKit Cloud you can also use LiveKit Inference (`stt="assemblyai/..."`, `tts="cartesia/..."`
-model strings, no extra provider keys) and LiveKit's turn-detector model; both need a Cloud
-project, so they are not used in this local demo.
+**Measured** (local LiveKit server, home network, scripted caller): the first agent audio comes
+3–4.5 s after the caller stops talking on turns that call a tool, including the deliberate 1.2 s
+end-of-turn wait. The Claude skill takes about 3 s more, covered by the spoken filler.
+
+On LiveKit Cloud, set `TURN_DETECTOR_VERSION=v1` for LiveKit's hosted (larger) turn-detector
+model, and consider LiveKit Inference (`stt="assemblyai/..."`, `tts="cartesia/..."` model
+strings, no extra provider keys). Both need a Cloud project, so they are not used locally.
 
 ## Quick start (local, macOS or Linux)
 
@@ -92,8 +97,31 @@ the microphone, and try:
 uv run pytest                        # knowledge base, tools against the mock API and webhook,
                                      # and LLM tool-choice tests (real OpenRouter calls)
 uv run python scripts/e2e_call.py    # with run_local.sh running: joins a room like the web page,
-                                     # speaks three synthesized questions and checks the answers
+                                     # asks three spoken questions (two with a pause mid-sentence),
+                                     # checks the answers and prints response times
 ```
+
+## Demo
+
+`demo/morning-brief-demo.mp4` (about 70 s, 1280×720) is a real call recorded end to end: a
+scripted caller (Gemini TTS voice) joins through the token endpoint, exactly like the web page,
+and asks:
+
+1. "Give me my morning brief." → the agent calls the internal API and gives a ~20 s brief
+2. "What's our refund policy for annual plans?" → knowledge-base search
+3. "Ask Claude which tickets I should tackle first." → the agent says "Let me check that, one
+   moment." while the Claude webhook runs, then reads back the result
+
+Both sides of the call are recorded on one timeline (`demo/morning-brief-demo.wav`) and
+nothing is cut or sped up between the first question and the last answer, so the pauses are the
+real response times. The picture is the call page plus captions of who is speaking. To make a
+new one, with `./run_local.sh` running (needs ffmpeg and Google Chrome):
+
+```bash
+uv run python scripts/record_demo.py
+```
+
+The video is not in git (the `demo/` folder is ignored).
 
 ## Deploy on Ubuntu with LiveKit Cloud
 
@@ -136,6 +164,10 @@ Restarting is safe: the worker finishes calls in progress before it exits.
   `Charon` with `TTS_PROVIDER=gemini`). Another TTS vendor (Cartesia, ElevenLabs, ...):
   `uv add "livekit-agents[cartesia]"` and add a branch in `voice_agent/providers.py`.
 - **LLM**: `LLM_MODEL`, and `LLM_BASE_URL` / `LLM_API_KEY` for any OpenAI-compatible provider.
+- **Turn-taking**: `ENDPOINTING_MIN_DELAY` (silence before answering, default 1.2 s) and
+  `ENDPOINTING_MAX_DELAY` (when the sentence sounds unfinished, default 2.0 s). Raise them if
+  callers get cut off, lower them for snappier replies. `STT_KEYTERMS` lists names and terms
+  the recognizer should expect.
 - **Knowledge base**: add, edit or delete `.md` files in `knowledge_base/` (one topic per `##`
   heading works best), then restart. For thousands of documents, replace
   `KnowledgeBase.search()` with a vector search; the tool stays the same.
@@ -168,7 +200,8 @@ services/
 web/index.html      the call page (LiveKit JS client from a pinned CDN build)
 knowledge_base/     Markdown knowledge base (fictional)
 deploy/             systemd units
-tests/, scripts/    pytest suite and an end-to-end call script
+tests/              pytest suite
+scripts/            scripted caller: end-to-end check and demo recording
 ```
 
 ## Notes and limits
@@ -180,6 +213,9 @@ tests/, scripts/    pytest suite and an end-to-end call script
   logs that it falls back to VAD-based interruption, which is expected.
 - The LiveKit SDKs use `HTTPS_PROXY` but ignore `NO_PROXY`; `voice_agent/main.py` clears the
   proxy variables when `LIVEKIT_URL` is a local address, so a machine with a proxy still works.
+- Hosted APIs occasionally stall a request (seen a few times in testing, on both OpenRouter and
+  AssemblyAI TTS). The agent retries after 6 s (LLM) / 2 s (TTS) without data instead of
+  LiveKit's 10 s default, so a stall costs a few seconds rather than ten.
 - The webhook call is synchronous with a timeout. If the real Claude setup answers by calling a
   URL back instead, the tool can wait on that callback the same way (keyed by `request_id`).
 

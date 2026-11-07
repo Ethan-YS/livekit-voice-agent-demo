@@ -103,7 +103,7 @@ async def _ask_claude(*, system: str, user: str) -> str:
         # Newer Claude models always think first; keep it short (low latency) and leave
         # enough token budget for the answer after the thinking.
         "reasoning": {"effort": "low"},
-        "max_tokens": 2000,
+        "max_tokens": 1000,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
     try:

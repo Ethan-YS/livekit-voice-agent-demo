@@ -32,18 +32,43 @@ class Settings:
     # Speech-to-text
     stt_provider: str = _env("STT_PROVIDER", "assemblyai")
     stt_model: str = _env("STT_MODEL")  # empty = provider default
-    turn_detection: str = _env("TURN_DETECTION", "stt")  # "stt" or "vad"
+    # Words the recognizer should expect (names, product terms), comma-separated
+    stt_keyterms: tuple[str, ...] = tuple(
+        t.strip()
+        for t in _env(
+            "STT_KEYTERMS",
+            "Claude,morning brief,annual plan,annual maintenance plan,tickets,Riverside Clinic",
+        ).split(",")
+        if t.strip()
+    )
+
+    # Turn detection: when has the caller finished speaking?
+    #   "model": LiveKit's end-of-turn model (local "v1-mini" runs offline; use
+    #            TURN_DETECTOR_VERSION=v1 on LiveKit Cloud for the hosted model)
+    #   "stt":   AssemblyAI's end-of-turn signal;  "vad": silence only
+    turn_detection: str = _env("TURN_DETECTION", "model")
+    turn_detector_version: str = _env("TURN_DETECTOR_VERSION", "v1-mini")
+    # Below this end-of-turn probability the model treats the sentence as unfinished
+    # and waits up to ENDPOINTING_MAX_DELAY. Empty = LiveKit's default for the language.
+    turn_unlikely_threshold: str = _env("TURN_UNLIKELY_THRESHOLD")
+    # Silence (s) before answering when the sentence sounds finished / unfinished
+    endpointing_min_delay: float = float(_env("ENDPOINTING_MIN_DELAY", "1.2"))
+    endpointing_max_delay: float = float(_env("ENDPOINTING_MAX_DELAY", "2.0"))
 
     # LLM: any OpenAI-compatible endpoint (OpenRouter by default)
     llm_base_url: str = _env("LLM_BASE_URL", "https://openrouter.ai/api/v1")
     llm_api_key: str = _env("LLM_API_KEY") or _env("OPENROUTER_API_KEY")
     llm_model: str = _env("LLM_MODEL", "anthropic/claude-haiku-5.5")
     llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.4"))
+    # Give up on a silent LLM request after this many seconds and retry
+    llm_timeout: float = float(_env("LLM_TIMEOUT_SECONDS", "6"))
 
     # Text-to-speech
     tts_provider: str = _env("TTS_PROVIDER", "assemblyai")  # "assemblyai" or "gemini"
     tts_voice: str = _env("TTS_VOICE")  # empty = provider default
     tts_model: str = _env("TTS_MODEL")  # empty = provider default
+    # Retry a TTS request that has produced no audio after this many seconds
+    tts_timeout: float = float(_env("TTS_TIMEOUT_SECONDS", "2"))
 
     # Prompt and greeting
     prompt_file: Path = PROJECT_ROOT / _env("PROMPT_FILE", "voice_agent/prompt.md")

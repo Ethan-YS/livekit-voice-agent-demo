@@ -13,10 +13,12 @@ SKILL = "ticket_triage_summary"
 
 async def test_morning_brief(services):
     brief = await InternalApi(services.api_url, TEST_API_TOKEN).morning_brief()
-    assert brief["calendar"], "calendar should not be empty"
-    assert brief["open_tickets"]["total"] == 7
-    assert brief["open_tickets"]["by_priority"]["urgent"] == 2
-    assert brief["sales"]["yesterday"]["revenue"] > 0
+    headline, details = brief["headline"], brief["details"]
+    assert len(headline["urgent_tickets"]) == 2
+    assert headline["first_meeting"]["title"] == "Weekly ops stand-up"
+    assert headline["revenue_yesterday"] > 0
+    assert len(details["open_tickets"]) == 7
+    assert details["calendar"], "calendar should not be empty"
 
 
 async def test_open_tickets_filter(services):

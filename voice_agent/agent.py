@@ -39,9 +39,9 @@ class MorningBriefAgent(Agent):
 
     @function_tool
     async def get_morning_brief(self, context: RunContext) -> str:
-        """Get today's brief from the internal systems: calendar, open tickets
-        (with the urgent ones listed) and sales numbers. Use for "my brief",
-        "what's my day like", or any overview question."""
+        """Get today's brief from the internal systems. Use for "my brief", "what's
+        my day like", or any overview question. Speak only the `headline`; keep
+        `details` (full calendar, all open tickets, sales) for follow-up questions."""
         logger.info("tool get_morning_brief")
         try:
             return json.dumps(await self._api.morning_brief())

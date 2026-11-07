@@ -42,25 +42,36 @@ class InternalApi:
         return httpx.AsyncClient(headers=self._headers, timeout=self._timeout)
 
     async def morning_brief(self) -> dict[str, Any]:
-        """Today's calendar, open tickets and sales numbers, fetched in parallel."""
+        """Today's brief, fetched in parallel: a short `headline` meant to be spoken,
+        and `details` kept for follow-up questions."""
         async with self._client() as client:
             calendar, tickets, sales = await asyncio.gather(
                 self._get(client, "/v1/calendar/today"),
                 self._get(client, "/v1/tickets", status="open"),
                 self._get(client, "/v1/sales/summary"),
             )
+        open_tickets = tickets["tickets"]
         by_priority: dict[str, int] = {}
-        for t in tickets["tickets"]:
+        for t in open_tickets:
             by_priority[t["priority"]] = by_priority.get(t["priority"], 0) + 1
+        events = calendar["events"]
         return {
-            "date": calendar["date"],
-            "calendar": calendar["events"],
-            "open_tickets": {
-                "total": len(tickets["tickets"]),
-                "by_priority": by_priority,
-                "urgent": [t for t in tickets["tickets"] if t["priority"] == "urgent"],
+            "headline": {
+                "urgent_tickets": [
+                    {k: t[k] for k in ("customer", "title", "assignee")}
+                    for t in open_tickets
+                    if t["priority"] == "urgent"
+                ],
+                "first_meeting": events[0] if events else None,
+                "revenue_yesterday": sales["yesterday"]["revenue"],
             },
-            "sales": sales,
+            "details": {
+                "date": calendar["date"],
+                "calendar": events,
+                "open_tickets_by_priority": by_priority,
+                "open_tickets": open_tickets,
+                "sales": sales,
+            },
         }
 
     async def open_tickets(self, priority: str | None = None) -> list[dict[str, Any]]:
