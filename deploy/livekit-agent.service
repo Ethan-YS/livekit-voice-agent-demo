@@ -1,0 +1,31 @@
+# systemd unit for the voice agent worker (Ubuntu 22.04 / 24.04).
+#
+#   sudo cp deploy/livekit-agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now livekit-agent     # start now and on every boot
+#   sudo systemctl restart livekit-agent          # after changing .env or code
+#   journalctl -u livekit-agent -f                # logs
+#
+# Adjust User and the /opt/livekit-voice-demo paths to your setup.
+
+[Unit]
+Description=LiveKit voice agent (morning brief)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voiceagent
+WorkingDirectory=/opt/livekit-voice-demo
+EnvironmentFile=/opt/livekit-voice-demo/.env
+ExecStart=/opt/livekit-voice-demo/.venv/bin/python -m voice_agent start
+Restart=always
+RestartSec=5
+# On SIGTERM the worker stops taking new calls and lets running ones finish.
+KillSignal=SIGTERM
+TimeoutStopSec=600
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

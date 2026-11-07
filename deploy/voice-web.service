@@ -1,0 +1,25 @@
+# systemd unit for the web page + token endpoint (services/web.py).
+# Put it behind an HTTPS reverse proxy (Caddy, nginx): browsers only allow the
+# microphone on https:// pages (or localhost).
+#
+#   sudo cp deploy/voice-web.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now voice-web
+
+[Unit]
+Description=Voice agent web page and token endpoint
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=voiceagent
+WorkingDirectory=/opt/livekit-voice-demo
+EnvironmentFile=/opt/livekit-voice-demo/.env
+ExecStart=/opt/livekit-voice-demo/.venv/bin/uvicorn services.web:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

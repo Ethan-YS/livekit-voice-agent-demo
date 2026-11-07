@@ -1,0 +1,15 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# runtime
+logs/
+*.log
+.DS_Store

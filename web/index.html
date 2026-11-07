@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f1115">
+  <title>Morning Brief</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --fg: #f2f4f7;
+      --muted: #9aa3b2;
+      --accent: #3ddc97;
+      --danger: #ff5c5c;
+      --ring: rgba(61, 220, 151, 0.35);
+      --card: #181b22;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9;
+        --fg: #12151b;
+        --muted: #5b6474;
+        --accent: #0f9d63;
+        --danger: #d93636;
+        --ring: rgba(15, 157, 99, 0.25);
+        --card: #ffffff;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+      -webkit-tap-highlight-color: transparent;
+    }
+    header { text-align: center; }
+    h1 { font-size: 22px; margin: 0; }
+    .sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+    main {
+      flex: 1;
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+    }
+    .call {
+      --level: 0;
+      position: relative;
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      font-size: 22px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 0 0 calc(var(--level) * 36px) var(--ring);
+      transition: background 0.2s, box-shadow 0.08s linear;
+    }
+    .call.active { background: var(--danger); }
+    .call:disabled { opacity: 0.6; cursor: default; }
+    .status { font-size: 20px; font-weight: 500; min-height: 28px; text-align: center; }
+    .status.speaking { color: var(--accent); }
+    .mic { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+    .meter { width: 120px; height: 8px; border-radius: 4px; background: var(--card); overflow: hidden; }
+    .meter > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.08s linear; }
+    .row { display: flex; gap: 12px; }
+    .small {
+      border: 1px solid var(--muted);
+      background: transparent;
+      color: var(--fg);
+      border-radius: 999px;
+      padding: 10px 18px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .captions {
+      width: 100%;
+      background: var(--card);
+      border-radius: 14px;
+      padding: 14px 16px;
+      min-height: 96px;
+      font-size: 15px;
+    }
+    .captions p { margin: 0 0 6px; }
+    .captions b { color: var(--muted); font-weight: 500; }
+    [hidden] { display: none !important; }
+    footer { color: var(--muted); font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Morning Brief</h1>
+    <div class="sub">Voice assistant demo &middot; fake data</div>
+  </header>
+
+  <main>
+    <div class="status" id="status">Tap to start</div>
+    <button class="call" id="call" aria-label="Start call">Start call</button>
+    <div class="mic" id="mic" hidden>
+      <span id="micLabel">Mic</span>
+      <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+    </div>
+    <div class="row">
+      <button class="small" id="mute" hidden>Mute</button>
+      <button class="small" id="unlock" hidden>Tap to enable sound</button>
+    </div>
+    <section class="captions" id="captions" aria-live="polite">
+      <p><b>Agent:</b> <span id="agentText">&hellip;</span></p>
+      <p><b>You:</b> <span id="userText">&hellip;</span></p>
+    </section>
+  </main>
+
+  <footer>Built with LiveKit Agents</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2.22.4/dist/livekit-client.umd.js"
+          integrity="sha384-5qI/UmLG0CvuWCt6vqjMW1oRwzXu+MNhbw4x6yo9NARdlqi94LwQfq9wvDTIcfrD"
+          crossorigin="anonymous"></script>
+  <script>
+    const { Room, RoomEvent, Track, ParticipantKind } = LivekitClient;
+    const $ = (id) => document.getElementById(id);
+    const AGENT_STATES = {
+      initializing: "Agent is joining…",
+      listening: "Listening",
+      thinking: "Thinking…",
+      speaking: "Speaking",
+    };
+
+    let room = null;
+    let meterStop = null;
+    let wakeLock = null;
+
+    function setStatus(text, cls = "") {
+      $("status").textContent = text;
+      $("status").className = "status " + cls;
+    }
+
+    function setCallUi(active) {
+      const btn = $("call");
+      btn.classList.toggle("active", active);
+      btn.textContent = active ? "End call" : "Start call";
+      btn.setAttribute("aria-label", btn.textContent);
+      $("mic").hidden = !active;
+      $("mute").hidden = !active;
+    }
+
+    async function startCall() {
+      $("call").disabled = true;
+      setStatus("Connecting…");
+      // Created inside the tap so mobile browsers allow audio.
+      const audioCtx = new AudioContext();
+      try {
+        const code = new URLSearchParams(location.search).get("code") || "";
+        const res = await fetch("api/token", { method: "POST", headers: { "X-Access-Code": code } });
+        if (!res.ok) throw new Error(res.status === 401 ? "Wrong access code" : "Token request failed");
+        const { serverUrl, participantToken } = await res.json();
+
+        room = new Room({
+          audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        wireRoomEvents(room);
+        await room.connect(serverUrl, participantToken);
+        await room.localParticipant.setMicrophoneEnabled(true);
+        await room.startAudio().catch(() => {});
+        $("unlock").hidden = room.canPlaybackAudio;
+
+        const mic = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+        meterStop = startMeter(audioCtx, mic.track.mediaStreamTrack);
+        wakeLock = await navigator.wakeLock?.request("screen").catch(() => null);
+
+        setCallUi(true);
+        const agentHere = [...room.remoteParticipants.values()].some((p) => p.kind === ParticipantKind.AGENT);
+        setStatus(agentHere ? "Connected" : AGENT_STATES.initializing);
+      } catch (err) {
+        console.error(err);
+        audioCtx.close();
+        await endCall();
+        setStatus(err.name === "NotAllowedError"
+          ? "Microphone blocked. Allow it and try again."
+          : err.message || "Could not connect");
+      } finally {
+        $("call").disabled = false;
+      }
+    }
+
+    function wireRoomEvents(r) {
+      r.on(RoomEvent.TrackSubscribed, (track) => {
+        if (track.kind === Track.Kind.Audio) document.body.appendChild(track.attach());
+      });
+      r.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()));
+      r.on(RoomEvent.AudioPlaybackStatusChanged, () => { $("unlock").hidden = r.canPlaybackAudio; });
+      r.on(RoomEvent.ParticipantAttributesChanged, (changed, participant) => {
+        const state = changed["lk.agent.state"];
+        if (participant.kind === ParticipantKind.AGENT && state) {
+          setStatus(AGENT_STATES[state] || state, state === "speaking" ? "speaking" : "");
+        }
+      });
+      r.on(RoomEvent.ParticipantDisconnected, (participant) => {
+        if (participant.kind === ParticipantKind.AGENT) setStatus("Agent left the call");
+      });
+      r.on(RoomEvent.Disconnected, () => { cleanup(); setStatus("Call ended"); });
+      r.registerTextStreamHandler("lk.transcription", async (reader, sender) => {
+        const target = sender.identity === r.localParticipant.identity ? "userText" : "agentText";
+        let text = "";
+        for await (const chunk of reader) {
+          text += chunk;
+          $(target).textContent = text;
+        }
+      });
+    }
+
+    function startMeter(audioCtx, mediaStreamTrack) {
+      const source = audioCtx.createMediaStreamSource(new MediaStream([mediaStreamTrack]));
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      let raf = 0;
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const v of data) sum += ((v - 128) / 128) ** 2;
+        const level = Math.min(1, Math.sqrt(sum / data.length) * 4);
+        $("meter").style.width = `${Math.round(level * 100)}%`;
+        $("call").style.setProperty("--level", level.toFixed(2));
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+      return () => { cancelAnimationFrame(raf); audioCtx.close(); };
+    }
+
+    function cleanup() {
+      meterStop?.();
+      meterStop = null;
+      wakeLock?.release?.();
+      wakeLock = null;
+      document.querySelectorAll("audio").forEach((el) => el.remove());
+      $("call").style.setProperty("--level", 0);
+      $("meter").style.width = "0";
+      $("unlock").hidden = true;
+      $("mute").textContent = "Mute";
+      setCallUi(false);
+    }
+
+    async function endCall() {
+      const r = room;
+      room = null;
+      if (r) await r.disconnect();
+      cleanup();
+    }
+
+    $("call").addEventListener("click", () => (room ? endCall() : startCall()));
+    $("unlock").addEventListener("click", () => room?.startAudio());
+    $("mute").addEventListener("click", async () => {
+      if (!room) return;
+      const enabled = room.localParticipant.isMicrophoneEnabled;
+      await room.localParticipant.setMicrophoneEnabled(!enabled);
+      $("mute").textContent = enabled ? "Unmute" : "Mute";
+      $("micLabel").textContent = enabled ? "Muted" : "Mic";
+    });
+  </script>
+</body>
+</html>
