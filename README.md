@@ -8,6 +8,10 @@ deeper question to a Claude skill behind a webhook.
 It is a demo: the company (Acme Field Services), the internal API and all data are fictional.
 The parts that would be swapped for real systems are clearly separated.
 
+**Watch the 70-second demo call:** [morning-brief-demo.mp4](https://github.com/Ethan-YS/livekit-voice-agent-demo/releases/download/v0.1/morning-brief-demo.mp4) (details in [Demo](#demo))
+
+[![Demo call: the agent reads back the Claude skill's answer](docs/demo-thumbnail.jpg)](https://github.com/Ethan-YS/livekit-voice-agent-demo/releases/download/v0.1/morning-brief-demo.mp4)
+
 **What it covers**
 
 - LiveKit Agents worker that runs on Ubuntu under systemd (restarts on crash and on reboot) and
@@ -103,9 +107,10 @@ uv run python scripts/e2e_call.py    # with run_local.sh running: joins a room l
 
 ## Demo
 
-`demo/morning-brief-demo.mp4` (about 70 s, 1280×720) is a real call recorded end to end: a
-scripted caller (Gemini TTS voice) joins through the token endpoint, exactly like the web page,
-and asks:
+[`morning-brief-demo.mp4`](https://github.com/Ethan-YS/livekit-voice-agent-demo/releases/download/v0.1/morning-brief-demo.mp4)
+(about 70 s, 1280×720, attached to the [v0.1 release](https://github.com/Ethan-YS/livekit-voice-agent-demo/releases/tag/v0.1))
+is a real call recorded end to end: a scripted caller (Gemini TTS voice) joins through the token
+endpoint, exactly like the web page, and asks:
 
 1. "Give me my morning brief." → the agent calls the internal API and gives a ~20 s brief
 2. "What's our refund policy for annual plans?" → knowledge-base search
@@ -121,7 +126,7 @@ new one, with `./run_local.sh` running (needs ffmpeg and Google Chrome):
 uv run python scripts/record_demo.py
 ```
 
-The video is not in git (the `demo/` folder is ignored).
+The video is not in git (the `demo/` folder is ignored); it lives on the release instead.
 
 ## Deploy on Ubuntu with LiveKit Cloud
 
@@ -202,6 +207,7 @@ knowledge_base/     Markdown knowledge base (fictional)
 deploy/             systemd units
 tests/              pytest suite
 scripts/            scripted caller: end-to-end check and demo recording
+docs/               README image
 ```
 
 ## Notes and limits
