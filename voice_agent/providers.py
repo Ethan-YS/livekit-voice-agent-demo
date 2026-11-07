@@ -7,8 +7,11 @@ and add a branch below.
 
 from __future__ import annotations
 
-from livekit.agents import TurnHandlingOptions, inference, llm, stt, tts
-from livekit.plugins import assemblyai, google, openai
+from typing import Any
+
+from livekit.agents import NOT_GIVEN, NotGivenOr, TurnHandlingOptions, inference, llm, stt, tts
+from livekit.agents.utils import is_given
+from livekit.plugins import anthropic, assemblyai, google, openai
 
 from .config import Settings
 
@@ -41,22 +44,49 @@ def build_turn_handling(s: Settings) -> TurnHandlingOptions:
     raise ValueError(f"Unknown TURN_DETECTION: {s.turn_detection!r}")
 
 
+class _ClaudeLLM(anthropic.LLM):
+    """LiveKit's Anthropic LLM, plus an effort level on every request.
+
+    Current Claude models think before answering; on a voice call that thinking is
+    dead air, so the agent asks for a low effort (`LLM_EFFORT`).
+    """
+
+    def __init__(self, *, effort: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._effort = effort
+
+    def chat(self, *, extra_kwargs: NotGivenOr[dict[str, Any]] = NOT_GIVEN, **kwargs):
+        extra = dict(extra_kwargs) if is_given(extra_kwargs) else {}
+        if self._effort:
+            extra.setdefault("output_config", {"effort": self._effort})
+        return super().chat(extra_kwargs=extra, **kwargs)
+
+
 def build_llm(s: Settings) -> llm.LLM:
-    # The OpenAI plugin talks to any OpenAI-compatible endpoint: OpenRouter (default),
-    # OpenAI, Groq, a self-hosted vLLM, ...
-    if not s.llm_api_key:
-        raise ValueError("Set LLM_API_KEY (or OPENROUTER_API_KEY) in .env")
-    kwargs = {}
-    if "openrouter.ai" in s.llm_base_url:
-        # Route each request to the provider with the lowest current latency.
-        kwargs["extra_body"] = {"provider": {"sort": "latency"}}
-    return openai.LLM(
-        model=s.llm_model,
-        base_url=s.llm_base_url,
-        api_key=s.llm_api_key,
-        temperature=s.llm_temperature,
-        **kwargs,
-    )
+    if s.llm_provider == "anthropic":
+        if not s.anthropic_api_key:
+            raise ValueError("Set ANTHROPIC_API_KEY in .env")
+        # No temperature here: current Claude models reject non-default sampling values.
+        return _ClaudeLLM(
+            model=s.llm_model,
+            api_key=s.anthropic_api_key,
+            effort=s.llm_effort,
+            max_tokens=2048,  # thinking counts toward this; spoken replies are short
+        )
+    if s.llm_provider == "openai":
+        # Any OpenAI-compatible endpoint: OpenRouter, OpenAI, Groq, a self-hosted vLLM, ...
+        if not s.llm_api_key:
+            raise ValueError("Set LLM_API_KEY (or OPENROUTER_API_KEY) in .env")
+        kwargs: dict[str, Any] = {}
+        if s.llm_temperature:
+            kwargs["temperature"] = float(s.llm_temperature)
+        if "openrouter.ai" in s.llm_base_url:
+            # Route each request to the provider with the lowest current latency.
+            kwargs["extra_body"] = {"provider": {"sort": "latency"}}
+        return openai.LLM(
+            model=s.llm_model, base_url=s.llm_base_url, api_key=s.llm_api_key, **kwargs
+        )
+    raise ValueError(f"Unknown LLM_PROVIDER: {s.llm_provider!r}")
 
 
 def build_tts(s: Settings) -> tts.TTS:

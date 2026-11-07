@@ -3,8 +3,8 @@
 The voice agent POSTs {"skill", "request"}; this service runs one predefined,
 read-only skill with a Claude model and returns the result. Here the skill is
 "ticket_triage_summary": it reads the open tickets from the internal API and
-asks Claude for a short spoken triage. Claude is reached through OpenRouter's
-OpenAI-compatible API; point CLAUDE_API_BASE at another gateway if needed.
+asks Claude for a short spoken triage, through the Anthropic API
+(ANTHROPIC_API_KEY).
 
     uv run uvicorn services.claude_webhook:app --port 8002
 """
@@ -18,6 +18,7 @@ import secrets
 import time
 from pathlib import Path
 
+import anthropic
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
@@ -28,9 +29,12 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "").strip()
 INTERNAL_API_URL = os.environ.get("INTERNAL_API_URL", "http://127.0.0.1:8001").rstrip("/")
 INTERNAL_API_TOKEN = os.environ.get("INTERNAL_API_TOKEN", "").strip()
-CLAUDE_API_BASE = os.environ.get("CLAUDE_API_BASE", "https://openrouter.ai/api/v1").rstrip("/")
-CLAUDE_API_KEY = (os.environ.get("CLAUDE_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")).strip()
-CLAUDE_SKILL_MODEL = os.environ.get("CLAUDE_SKILL_MODEL", "anthropic/claude-sonnet-5.5")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+CLAUDE_SKILL_MODEL = os.environ.get("CLAUDE_SKILL_MODEL", "claude-sonnet-5-5")
+# The skill result is read out loud, so a quick answer beats a long think.
+CLAUDE_SKILL_EFFORT = os.environ.get("CLAUDE_SKILL_EFFORT", "low")
+
+_claude = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY, timeout=30) if ANTHROPIC_API_KEY else None
 
 SKILLS_DIR = Path(__file__).resolve().parent / "skills"
 # skill name -> internal API path it is allowed to read
@@ -96,25 +100,33 @@ async def _read_internal(path: str) -> dict:
 
 
 async def _ask_claude(*, system: str, user: str) -> str:
-    if not CLAUDE_API_KEY:
-        raise HTTPException(status_code=500, detail="CLAUDE_API_KEY / OPENROUTER_API_KEY not set")
-    payload = {
-        "model": CLAUDE_SKILL_MODEL,
-        # Newer Claude models always think first; keep it short (low latency) and leave
-        # enough token budget for the answer after the thinking.
-        "reasoning": {"effort": "low"},
-        "max_tokens": 1000,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-    }
+    if _claude is None:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{CLAUDE_API_BASE}/chat/completions",
-                headers={"Authorization": f"Bearer {CLAUDE_API_KEY}"},
-                json=payload,
-            )
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"].strip()
-    except (httpx.HTTPError, KeyError, IndexError) as e:
+        response = await _claude.beta.messages.create(
+            model=CLAUDE_SKILL_MODEL,
+            # Thinking counts toward max_tokens; leave room for the answer after it.
+            max_tokens=4000,
+            output_config={"effort": CLAUDE_SKILL_EFFORT},
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            # If a safety classifier declines, the API retries on Anthropic's recommended
+            # fallback model inside the same call.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except anthropic.APIStatusError as e:
+        logger.warning("Claude call failed: HTTP %s %s", e.status_code, e.message)
+        raise HTTPException(status_code=502, detail="Claude call failed") from e
+    except anthropic.APIConnectionError as e:
         logger.warning("Claude call failed: %r", e)
         raise HTTPException(status_code=502, detail="Claude call failed") from e
+
+    if response.stop_reason == "refusal":
+        logger.warning("Claude declined the request: %s", response.stop_details)
+        raise HTTPException(status_code=502, detail="Claude declined the request")
+    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    if not text:
+        logger.warning("Claude returned no text (stop_reason=%s)", response.stop_reason)
+        raise HTTPException(status_code=502, detail="Claude returned no answer")
+    return text

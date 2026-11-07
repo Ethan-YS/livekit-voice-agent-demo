@@ -1,10 +1,10 @@
 """Calls the tool backends directly against the running mock API and webhook.
 
-The Claude tests make a real call through OpenRouter (a few seconds each).
+The Claude tests make a real call to the Anthropic API (a few seconds each).
 """
 
 import pytest
-from conftest import TEST_API_TOKEN, TEST_WEBHOOK_SECRET, requires_openrouter
+from conftest import TEST_API_TOKEN, TEST_WEBHOOK_SECRET, requires_claude
 
 from voice_agent.backends import BackendError, ClaudeSkillClient, InternalApi
 
@@ -31,7 +31,7 @@ async def test_internal_api_rejects_bad_token(services):
         await InternalApi(services.api_url, "wrong").morning_brief()
 
 
-@requires_openrouter
+@requires_claude
 async def test_claude_skill_round_trip(services):
     client = ClaudeSkillClient(services.webhook_url, TEST_WEBHOOK_SECRET, timeout=40)
     result = await client.run(SKILL, "What should I tackle first today?")

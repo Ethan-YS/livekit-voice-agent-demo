@@ -55,11 +55,22 @@ class Settings:
     endpointing_min_delay: float = float(_env("ENDPOINTING_MIN_DELAY", "1.2"))
     endpointing_max_delay: float = float(_env("ENDPOINTING_MAX_DELAY", "2.0"))
 
-    # LLM: any OpenAI-compatible endpoint (OpenRouter by default)
+    # LLM
+    #   "anthropic": Claude through the Anthropic API (ANTHROPIC_API_KEY)
+    #   "openai":    any OpenAI-compatible endpoint (OpenRouter, OpenAI, Groq, vLLM, ...)
+    llm_provider: str = _env("LLM_PROVIDER", "anthropic")
+    llm_model: str = _env("LLM_MODEL") or (
+        "claude-haiku-5-5" if _env("LLM_PROVIDER", "anthropic") == "anthropic"
+        else "anthropic/claude-haiku-5.5"
+    )
+    anthropic_api_key: str = _env("ANTHROPIC_API_KEY")
+    # How much the model thinks before answering (anthropic): low | medium | high.
+    # A voice call wants "low": less thinking, faster first word.
+    llm_effort: str = _env("LLM_EFFORT", "low")
+    # OpenAI-compatible provider only
     llm_base_url: str = _env("LLM_BASE_URL", "https://openrouter.ai/api/v1")
     llm_api_key: str = _env("LLM_API_KEY") or _env("OPENROUTER_API_KEY")
-    llm_model: str = _env("LLM_MODEL", "anthropic/claude-haiku-5.5")
-    llm_temperature: float = float(_env("LLM_TEMPERATURE", "0.4"))
+    llm_temperature: str = _env("LLM_TEMPERATURE")  # empty = provider default
     # Give up on a silent LLM request after this many seconds and retry
     llm_timeout: float = float(_env("LLM_TIMEOUT_SECONDS", "6"))
 

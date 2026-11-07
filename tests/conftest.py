@@ -20,10 +20,17 @@ load_dotenv(ROOT / ".env")
 TEST_API_TOKEN = "test-internal-token"
 TEST_WEBHOOK_SECRET = "test-webhook-secret"
 
-requires_openrouter = pytest.mark.skipif(
-    not os.environ.get("OPENROUTER_API_KEY"),
-    reason="needs OPENROUTER_API_KEY (real LLM call)",
+requires_claude = pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="needs ANTHROPIC_API_KEY (real Claude call)",
 )
+# The voice agent's LLM: Claude by default, or an OpenAI-compatible endpoint
+_llm_key = (
+    os.environ.get("ANTHROPIC_API_KEY")
+    if os.environ.get("LLM_PROVIDER", "anthropic") == "anthropic"
+    else os.environ.get("LLM_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+)
+requires_llm = pytest.mark.skipif(not _llm_key, reason="needs the LLM provider's API key")
 
 
 @dataclass

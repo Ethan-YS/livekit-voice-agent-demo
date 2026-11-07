@@ -36,7 +36,7 @@ The parts that would be swapped for real systems are clearly separated.
  │ services/web.py       │              │ voice_agent (LiveKit worker, systemd)  │
  │ page + token endpoint │              │                                        │
  └───────────────────────┘              │  mic ─► AssemblyAI STT ─► LLM ─► TTS ─► speaker
-                                        │         (Claude Haiku via OpenRouter)  │
+                                        │         (Claude Haiku, Anthropic API)  │
                                         │                 │ tools                │
                                         │  get_morning_brief / get_open_tickets ─┼─► internal API (GET only)
                                         │  search_knowledge_base ────────────────┼─► knowledge_base/*.md
@@ -53,9 +53,9 @@ In this repo the internal API (`services/mock_api.py`) and the Claude webhook
 | Stage | Default | Why | Swap via |
 |---|---|---|---|
 | STT | AssemblyAI Universal streaming | accurate, low latency, has its own end-of-turn model | `STT_PROVIDER`, `STT_MODEL` |
-| LLM | `anthropic/claude-haiku-5.5` via OpenRouter | fast, cheap, good at tool calling | `LLM_MODEL`, `LLM_BASE_URL` (any OpenAI-compatible API) |
+| LLM | `claude-haiku-5-5` via the Anthropic API | fast, cheap, good at tool calling; asked to think briefly (`LLM_EFFORT=low`) so it starts talking sooner | `LLM_MODEL`, `LLM_EFFORT`; `LLM_PROVIDER=openai` for any OpenAI-compatible API |
 | TTS | AssemblyAI streaming TTS | streaming, ~0.4 s to first audio on a warm connection | `TTS_PROVIDER=gemini`, `TTS_VOICE` |
-| Claude skill | `anthropic/claude-sonnet-5.5` | stands in for the client's own Claude setup | `CLAUDE_SKILL_MODEL` |
+| Claude skill | `claude-sonnet-5-5` via the Anthropic API (same key) | stands in for the client's own Claude setup | `CLAUDE_SKILL_MODEL` |
 
 **Turn-taking.** People pause mid-sentence, so the agent does not answer at the first gap.
 LiveKit's end-of-turn model (`turn-detector-v1-mini`, runs locally, no download) listens to how
@@ -73,7 +73,7 @@ strings, no extra provider keys). Both need a Cloud project, so they are not use
 ## Quick start (local, macOS or Linux)
 
 Requirements: [uv](https://docs.astral.sh/uv/), a LiveKit server binary, and API keys for
-AssemblyAI and OpenRouter (Gemini only if you use `TTS_PROVIDER=gemini`).
+AssemblyAI and Anthropic (Gemini only if you use `TTS_PROVIDER=gemini`).
 
 ```bash
 brew install livekit            # or: curl -sSL https://get.livekit.io | bash
@@ -99,7 +99,7 @@ the microphone, and try:
 
 ```bash
 uv run pytest                        # knowledge base, tools against the mock API and webhook,
-                                     # and LLM tool-choice tests (real OpenRouter calls)
+                                     # and LLM tool-choice tests (real Claude calls)
 uv run python scripts/e2e_call.py    # with run_local.sh running: joins a room like the web page,
                                      # asks three spoken questions (two with a pause mid-sentence),
                                      # checks the answers and prints response times
@@ -168,7 +168,9 @@ Restarting is safe: the worker finishes calls in progress before it exits.
 - **Voice**: `TTS_VOICE` (an AssemblyAI voice id, or a Gemini voice name such as `Kore`, `Puck`,
   `Charon` with `TTS_PROVIDER=gemini`). Another TTS vendor (Cartesia, ElevenLabs, ...):
   `uv add "livekit-agents[cartesia]"` and add a branch in `voice_agent/providers.py`.
-- **LLM**: `LLM_MODEL`, and `LLM_BASE_URL` / `LLM_API_KEY` for any OpenAI-compatible provider.
+- **LLM**: `LLM_MODEL`, and `LLM_EFFORT` for how long Claude thinks before it speaks (`low` keeps
+  the call snappy). For another provider set `LLM_PROVIDER=openai` with `LLM_BASE_URL` /
+  `LLM_API_KEY` (any OpenAI-compatible API, e.g. OpenRouter).
 - **Turn-taking**: `ENDPOINTING_MIN_DELAY` (silence before answering, default 1.2 s) and
   `ENDPOINTING_MAX_DELAY` (when the sentence sounds unfinished, default 2.0 s). Raise them if
   callers get cut off, lower them for snappier replies. `STT_KEYTERMS` lists names and terms

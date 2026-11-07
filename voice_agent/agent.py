@@ -52,16 +52,19 @@ class MorningBriefAgent(Agent):
     async def get_open_tickets(
         self,
         context: RunContext,
-        priority: Literal["urgent", "high", "normal", "low"] | None = None,
+        # Required, with "any" for all: LiveKit's strict schema makes parameters that
+        # have a default nullable, and Anthropic rejects an enum that may be null.
+        priority: Literal["any", "urgent", "high", "normal", "low"],
     ) -> str:
         """List open support tickets, optionally only one priority level.
 
         Args:
-            priority: Only return tickets with this priority. Leave empty for all.
+            priority: Only return tickets with this priority; "any" for all.
         """
         logger.info("tool get_open_tickets priority=%s", priority)
         try:
-            return json.dumps({"tickets": await self._api.open_tickets(priority)})
+            tickets = await self._api.open_tickets(None if priority == "any" else priority)
+            return json.dumps({"tickets": tickets})
         except BackendError as e:
             raise ToolError(str(e)) from e
 

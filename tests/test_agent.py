@@ -1,10 +1,10 @@
 """Behaviour tests: does the LLM pick the right tool? Text in, text out, no audio.
 
 Uses the LiveKit Agents test harness (AgentSession.run) with the real LLM, so it
-makes OpenRouter calls.
+makes real API calls (Claude by default).
 """
 
-from conftest import TEST_API_TOKEN, TEST_WEBHOOK_SECRET, requires_openrouter
+from conftest import TEST_API_TOKEN, TEST_WEBHOOK_SECRET, requires_claude, requires_llm
 from livekit.agents import AgentSession
 
 from voice_agent.agent import MorningBriefAgent
@@ -13,7 +13,7 @@ from voice_agent.config import PROJECT_ROOT, settings
 from voice_agent.knowledge_base import KnowledgeBase
 from voice_agent.providers import build_llm
 
-pytestmark = requires_openrouter
+pytestmark = requires_llm
 
 
 def make_agent(services) -> MorningBriefAgent:
@@ -48,6 +48,7 @@ async def test_policy_question_uses_knowledge_base(services):
     assert "60" in reply or "sixty" in reply.lower()
 
 
+@requires_claude
 async def test_triage_goes_to_claude_skill(services):
     result = await ask(services, "Ask Claude which tickets I should tackle first.")
     result.expect.contains_function_call(name="ask_claude_skill")
