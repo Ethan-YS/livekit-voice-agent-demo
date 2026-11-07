@@ -180,6 +180,7 @@ async def main() -> int:
 
     if call._silence_task:
         call._silence_task.cancel()
+        await asyncio.gather(call._silence_task, return_exceptions=True)
     await call.room.disconnect()
 
     checks = {

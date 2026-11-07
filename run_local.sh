@@ -17,7 +17,7 @@ cleanup() {
   trap - INT TERM EXIT
   echo
   echo "Stopping..."
-  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in ${pids[@]+"${pids[@]}"}; do kill "$pid" 2>/dev/null || true; done
   wait 2>/dev/null || true
 }
 trap 'cleanup; exit 0' INT TERM
