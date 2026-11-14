@@ -227,4 +227,4 @@ docs/               README image
 - The webhook call is synchronous with a timeout. If the real Claude setup answers by calling a
   URL back instead, the tool can wait on that callback the same way (keyed by `request_id`).
 
-Author: Ethan Yi
+Author: Ethan Yi · License: [MIT](LICENSE)
